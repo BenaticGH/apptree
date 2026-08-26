@@ -72,16 +72,31 @@
         .bubble:active {
             cursor: grabbing;
         }
+
+        /* Special overrides for the character image */
+        .image-bubble {
+            border: none;
+            background-color: transparent;
+            padding: 0;
+            width: 120px; 
+            border-radius: 0;
+        }
+
+        .image-bubble:hover {
+            background-color: transparent; 
+        }
     </style>
 </head>
 <body>
 
     <h1>apps</h1>
 
-    <!-- Added draggable="false" to prevent native browser link-dragging -->
     <a href="https://laser.muetzdesign.com" target="_blank" class="bubble" draggable="false">image to gcode</a>
     <a href="https://mix.muetzdesign.com" target="_blank" class="bubble" draggable="false">key training game</a>
     <a href="https://game.muetzdesign.com" target="_blank" class="bubble" draggable="false">other game</a>
+    
+    <!-- Floating Character Image -->
+    <img src="character-idle.png" class="bubble image-bubble" draggable="false" alt="floating character">
 
     <script>
         document.addEventListener("DOMContentLoaded", () => {
@@ -89,6 +104,9 @@
             let activeBubble = null;
             let hasDragged = false;
             let dragStartX = 0, dragStartY = 0;
+            
+            let flailInterval = null;
+            let flailToggle = false;
 
             const bubbles = Array.from(bubbleElements).map((el, i) => {
                 let w = el.offsetWidth;
@@ -99,10 +117,8 @@
                     el: el,
                     w: w,
                     h: h,
-                    // Start staggered near the center
                     x: (window.innerWidth / 2) - (w / 2) + (i * 30 - 30),
                     y: (window.innerHeight / 2) - (h / 2) + (i * 100 - 100),
-                    // Slower, organic starting velocity
                     vx: Math.cos(startAngle) * 1.0,
                     vy: Math.sin(startAngle) * 1.0,
                     angle: startAngle, 
@@ -110,13 +126,13 @@
                     offsetX: 0,
                     offsetY: 0,
                     lastX: 0,
-                    lastY: 0
+                    lastY: 0,
+                    flip: 1 // Tracks which way the element is facing (1 = right, -1 = left)
                 };
             });
 
             // Handle Drag Start
             const startDrag = (e, b) => {
-                // Ignore right clicks
                 if (e.button === 2) return; 
 
                 let clientX = e.touches ? e.touches[0].clientX : e.clientX;
@@ -132,19 +148,24 @@
                 
                 dragStartX = clientX;
                 dragStartY = clientY;
-                hasDragged = false; // Reset drag status on every new click
+                hasDragged = false; 
                 
                 bubbles.forEach(bub => bub.el.style.zIndex = 1);
                 b.el.style.zIndex = 10;
+
+                if (b.el.classList.contains('image-bubble')) {
+                    flailInterval = setInterval(() => {
+                        b.el.src = flailToggle ? 'character-flail1.png' : 'character-flail2.png';
+                        flailToggle = !flailToggle;
+                    }, 150); 
+                }
             };
 
             bubbles.forEach(b => {
                 b.el.addEventListener('mousedown', (e) => startDrag(e, b));
                 b.el.addEventListener('touchstart', (e) => startDrag(e, b), { passive: false });
 
-                // Link click prevention logic
                 b.el.addEventListener('click', (e) => {
-                    // If the user moved the mouse during the click, cancel the link redirect
                     if (hasDragged) {
                         e.preventDefault();
                         e.stopPropagation();
@@ -158,7 +179,6 @@
                     activeBubble.x = clientX - activeBubble.offsetX;
                     activeBubble.y = clientY - activeBubble.offsetY;
 
-                    // If moved more than 5 pixels, it's a drag, not a stationary click
                     if (Math.hypot(clientX - dragStartX, clientY - dragStartY) > 5) {
                         hasDragged = true;
                     }
@@ -176,6 +196,11 @@
             // Handle Drag End
             const endDrag = () => {
                 if (activeBubble) {
+                    if (activeBubble.el.classList.contains('image-bubble')) {
+                        clearInterval(flailInterval);
+                        activeBubble.el.src = 'character-idle.png';
+                    }
+
                     activeBubble.angle = Math.atan2(activeBubble.vy, activeBubble.vx);
                     activeBubble.isDragging = false;
                     activeBubble = null;
@@ -184,8 +209,6 @@
 
             window.addEventListener('mouseup', endDrag);
             window.addEventListener('touchend', endDrag);
-            
-            // Failsafe: if the mouse leaves the browser window, let go of the bubble
             window.addEventListener('mouseleave', endDrag); 
 
             // --- THE PHYSICS ENGINE ---
@@ -198,13 +221,11 @@
                     b.h = b.el.offsetHeight;
 
                     if (!b.isDragging) {
-                        // 1. Organic Steering
                         b.angle += (Math.random() - 0.5) * 0.15; 
                         
                         b.vx += Math.cos(b.angle) * 0.03;
                         b.vy += Math.sin(b.angle) * 0.03;
 
-                        // 2. Regulate speed
                         let speed = Math.hypot(b.vx, b.vy);
                         if (speed > 1.2) {
                             b.vx *= 0.97;
@@ -218,7 +239,6 @@
                         b.y += b.vy;
 
                         let bounced = false;
-                        // Clean wall bounces
                         if (b.x <= 0) { b.x = 0; b.vx = Math.abs(b.vx); bounced = true; }
                         if (b.x + b.w >= screenW) { b.x = screenW - b.w; b.vx = -Math.abs(b.vx); bounced = true; }
                         if (b.y <= 0) { b.y = 0; b.vy = Math.abs(b.vy); bounced = true; }
@@ -229,7 +249,6 @@
                         }
                         
                     } else {
-                        // Track mouse speed for throws
                         b.vx = (b.x - b.lastX);
                         b.vy = (b.y - b.lastY);
                         
@@ -244,7 +263,6 @@
                     b.lastY = b.y;
                 });
 
-                // Bubble-to-Bubble Collisions
                 for (let i = 0; i < bubbles.length; i++) {
                     for (let j = i + 1; j < bubbles.length; j++) {
                         let b1 = bubbles[i];
@@ -261,7 +279,6 @@
                         let overlapX = (b1.w / 2 + b2.w / 2) - Math.abs(dx);
                         let overlapY = (b1.h / 2 + b2.h / 2) - Math.abs(dy);
 
-                        // If they overlap, cleanly push apart
                         if (overlapX > 0 && overlapY > 0) {
                             if (overlapX < overlapY) {
                                 let correction = (overlapX / 2) + 1; 
@@ -289,16 +306,28 @@
                                 if (!b2.isDragging) b2.vy = temp;
                             }
                             
-                            // Adjust steering compass to new trajectory
                             if (!b1.isDragging) b1.angle = Math.atan2(b1.vy, b1.vx);
                             if (!b2.isDragging) b2.angle = Math.atan2(b2.vy, b2.vx);
                         }
                     }
                 }
 
-                // Apply visual updates to the screen
+                // Apply visual updates to the screen, including mirroring for the character
                 bubbles.forEach(b => {
-                    b.el.style.transform = `translate3d(${b.x}px, ${b.y}px, 0)`;
+                    let extraTransform = "";
+                    
+                    // If it's the character image, calculate which way it should face
+                    if (b.el.classList.contains('image-bubble')) {
+                        // Use a small threshold (0.1) so it doesn't rapidly flip when standing mostly still
+                        if (b.vx < -0.1) {
+                            b.flip = -1; // Moving left, mirror image
+                        } else if (b.vx > 0.1) {
+                            b.flip = 1;  // Moving right, normal image
+                        }
+                        extraTransform = ` scaleX(${b.flip})`;
+                    }
+                    
+                    b.el.style.transform = `translate3d(${b.x}px, ${b.y}px, 0)${extraTransform}`;
                 });
 
                 requestAnimationFrame(update);
